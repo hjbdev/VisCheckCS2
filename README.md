@@ -3,6 +3,8 @@
 
 A tool to check visibility between points in CS2 without memory hacking, using `.vpk`/`.vphys` map parsing and optimized **BVH raycasting**.  
 
+![Counter-strike 2 2025 04 06 - 16 33 37 163 DVR_1](https://github.com/user-attachments/assets/af2162ac-1cbd-429e-8216-6e9da18c980c)
+
 ---  
 ## 🔹 Features  
 - **Pure external approach**: No injection or `m_bSpottedByMask` dependency.  
