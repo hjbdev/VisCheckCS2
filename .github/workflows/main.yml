@@ -1,56 +1,135 @@
 name: build vischeck binaries
-
 on:
   push:
     branches: [main]
   workflow_dispatch:
-
 jobs:
   build:
     runs-on: windows-latest
-
     steps:
       - name: checkout code
         uses: actions/checkout@v3
-
+      
       - name: setup python
         uses: actions/setup-python@v4
         with:
-          python-version: 3.10
-
-      - name: install pybind11
-        run: pip install pybind11
-      - name: build vischeck binaries
+          python-version: '3.10'
+      
+      - name: install dependencies
+        run: |
+          pip install pybind11
+          python -c "import pybind11; print('pybind11 version:', pybind11.__version__)"
+          python -c "import pybind11; print('pybind11 include:', pybind11.get_include())"
+      
+      - name: setup msvc and build
+        uses: microsoft/setup-msbuild@v1.1
+      
+      - name: build everything
         shell: cmd
         run: |
-          for /f "usebackq tokens=*" %%i in (`"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -property installationPath`) do (
-            call "%%i\Common7\Tools\VsDevCmd.bat"
+          :: Setup Visual Studio environment
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=x64
+          
+          :: Get Python and pybind11 paths dynamically
+          for /f "tokens=*" %%i in ('python -c "import sys; print(sys.executable)"') do set PYTHON_EXE=%%i
+          for /f "tokens=*" %%i in ('python -c "import sys; print(sys.base_prefix)"') do set PYTHON_ROOT=%%i
+          for /f "tokens=*" %%i in ('python -c "import pybind11; print(pybind11.get_include())"') do set PYBIND11_INCLUDE=%%i
+          
+          set PYTHON_INCLUDE=%PYTHON_ROOT%\include
+          set PYTHON_LIB=%PYTHON_ROOT%\libs
+          
+          echo Python root: %PYTHON_ROOT%
+          echo Python include: %PYTHON_INCLUDE%
+          echo Python libs: %PYTHON_LIB%
+          echo Pybind11 include: %PYBIND11_INCLUDE%
+          
+          :: Verify paths exist
+          if not exist "%PYTHON_INCLUDE%" (
+            echo ERROR: Python include directory not found: %PYTHON_INCLUDE%
+            exit /b 1
           )
-
+          if not exist "%PYTHON_LIB%" (
+            echo ERROR: Python lib directory not found: %PYTHON_LIB%
+            exit /b 1
+          )
+          if not exist "%PYBIND11_INCLUDE%" (
+            echo ERROR: Pybind11 include directory not found: %PYBIND11_INCLUDE%
+            exit /b 1
+          )
+          
+          :: Build VPhysToOpt.exe
+          echo Building VPhysToOpt.exe...
           msbuild VPhysToOpt.sln /p:Configuration=Release /p:Platform=x64
-
-          :: get python include and lib dirs
-          for /f "usebackq tokens=*" %%i in (`python -c "import sysconfig; print(sysconfig.get_path('include'))"`) do set PYTHON_INCLUDE=%%i
-          for /f "usebackq tokens=*" %%i in (`python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))"`) do set PYTHON_LIB=%%i
-
-          :: get pybind11 include path
-          for /f "usebackq tokens=*" %%i in (`python -m pybind11 --includes`) do set PYBIND11_INCLUDES=%%i
-
-          :: extract first include path from pybind11 output (-I"path" -I"other")
-          for /f "tokens=1 delims=-I " %%a in ("%PYBIND11_INCLUDES%") do set PYBIND11_PATH=%%a
-          set PYBIND11_PATH=%PYBIND11_PATH:"=%
-
-          echo using python include: %PYTHON_INCLUDE%
-          echo using python lib: %PYTHON_LIB%
-          echo using pybind11 include: %PYBIND11_PATH%
-
-          cl /LD /std:c++20 /I "%PYTHON_INCLUDE%" /I "%PYBIND11_PATH%" vischeck_module.cpp /link /LIBPATH:"%PYTHON_LIB%" /OUT:vischeck.pyd
-
-
+          if errorlevel 1 (
+            echo ERROR: Failed to build VPhysToOpt.exe
+            exit /b 1
+          )
+          
+          :: Build vischeck.pyd
+          echo Building vischeck.pyd...
+          cd VisCheckCS2
+          
+          :: Check if source file exists
+          if not exist "vischeck_module.cpp" (
+            echo ERROR: vischeck_module.cpp not found in VisCheckCS2 directory
+            dir
+            exit /b 1
+          )
+          
+          :: Compile the .pyd file with proper linking
+          cl /LD ^
+             /std:c++20 ^
+             /EHsc ^
+             /O2 ^
+             /I "%PYTHON_INCLUDE%" ^
+             /I "%PYBIND11_INCLUDE%" ^
+             vischeck_module.cpp ^
+             /link ^
+             /LIBPATH:"%PYTHON_LIB%" ^
+             python310.lib ^
+             /OUT:vischeck.pyd
+          
+          if errorlevel 1 (
+            echo ERROR: Failed to compile vischeck.pyd
+            exit /b 1
+          )
+          
+          :: Verify the .pyd was created
+          if not exist "vischeck.pyd" (
+            echo ERROR: vischeck.pyd was not created
+            dir
+            exit /b 1
+          )
+          
+          echo Successfully built vischeck.pyd
+          dir vischeck.pyd
+          
+          cd ..
+      
+      - name: verify build outputs
+        shell: cmd
+        run: |
+          echo Checking build outputs...
+          if exist "x64\Release\VPhysToOpt.exe" (
+            echo ✓ VPhysToOpt.exe found
+            dir "x64\Release\VPhysToOpt.exe"
+          ) else (
+            echo ✗ VPhysToOpt.exe not found
+          )
+          
+          if exist "VisCheckCS2\vischeck.pyd" (
+            echo ✓ vischeck.pyd found
+            dir "VisCheckCS2\vischeck.pyd"
+          ) else (
+            echo ✗ vischeck.pyd not found
+            echo Contents of VisCheckCS2 directory:
+            dir VisCheckCS2
+          )
+      
       - name: upload built binaries
         uses: actions/upload-artifact@v4
         with:
           name: vischeck-win64
           path: |
             x64/Release/VPhysToOpt.exe
-            VisCheckCS2\vischeck.pyd
+            VisCheckCS2/vischeck.pyd
