@@ -76,19 +76,21 @@ jobs:
             exit /b 1
           )
           
-          :: Compile the .pyd file with proper linking
-          cl /LD ^
-             /std:c++20 ^
-             /EHsc ^
-             /O2 ^
-             /I "%PYTHON_INCLUDE%" ^
-             /I "%PYBIND11_INCLUDE%" ^
-             vischeck_module.cpp ^
-             /link ^
-             /LIBPATH:"%PYTHON_LIB%" ^
-             python310.lib ^
-             /OUT:vischeck.pyd
-          
+           :: Compile the .pyd file with proper linking
+           cl /LD ^
+              /std:c++20 ^
+              /EHsc ^
+              /O2 ^
+              /I "%PYTHON_INCLUDE%" ^
+              /I "%PYBIND11_INCLUDE%" ^
+              vischeck_module.cpp ^
+              VisCheck.cpp ^
+              OptimizedGeometry.cpp ^
+              Parser.cpp ^
+              /link ^
+              /LIBPATH:"%PYTHON_LIB%" ^
+              python310.lib ^
+              /OUT:vischeck.pyd          
           if errorlevel 1 (
             echo ERROR: Failed to compile vischeck.pyd
             exit /b 1
