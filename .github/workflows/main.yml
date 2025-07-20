@@ -5,7 +5,14 @@ on:
   workflow_dispatch:
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win64
+          - os: ubuntu-latest
+            platform: linux64
+    runs-on: ${{ matrix.os }}
     steps:
       - name: checkout code
         uses: actions/checkout@v3
@@ -21,10 +28,18 @@ jobs:
           python -c "import pybind11; print('pybind11 version:', pybind11.__version__)"
           python -c "import pybind11; print('pybind11 include:', pybind11.get_include())"
       
-      - name: setup msvc and build
+      - name: setup build tools (Windows)
+        if: matrix.os == 'windows-latest'
         uses: microsoft/setup-msbuild@v1.1
       
-      - name: build everything
+      - name: install build tools (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake g++
+      
+      - name: build everything (Windows)
+        if: matrix.os == 'windows-latest'
         shell: cmd
         run: |
           :: Setup Visual Studio environment
@@ -107,8 +122,80 @@ jobs:
           dir vischeck.pyd
           
           cd ..
+
+      - name: build everything (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          # Get Python and pybind11 paths
+          PYTHON_INCLUDE=$(python -c "import sysconfig; print(sysconfig.get_path('include'))")
+          PYBIND11_INCLUDE=$(python -c "import pybind11; print(pybind11.get_include())")
+          PYTHON_CONFIG_INCLUDE=$(python -c "import sysconfig; print(sysconfig.get_path('platinclude'))")
+          PYTHON_LIB=$(python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
+          PYTHON_VERSION=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+          
+          echo "Python include: $PYTHON_INCLUDE"
+          echo "Python config include: $PYTHON_CONFIG_INCLUDE" 
+          echo "Pybind11 include: $PYBIND11_INCLUDE"
+          echo "Python lib: $PYTHON_LIB"
+          echo "Python version: $PYTHON_VERSION"
+          
+          # Build VPhysToOpt
+          echo "Building VPhysToOpt..."
+          g++ -std=c++20 -O2 -o VPhysToOpt \
+            VPhysToOpt.cpp \
+            Parser.cpp \
+            OptimizedGeometry.cpp
+          
+          if [ $? -ne 0 ]; then
+            echo "ERROR: Failed to build VPhysToOpt"
+            exit 1
+          fi
+          
+          # Build vischeck.so (Python module)
+          echo "Building vischeck.so..."
+          cd VisCheckCS2
+          
+          if [ ! -f "vischeck_module.cpp" ]; then
+            echo "ERROR: vischeck_module.cpp not found in VisCheckCS2 directory"
+            ls -la
+            exit 1
+          fi
+          
+          # Compile the .so file
+          g++ -shared -fPIC \
+            -std=c++20 \
+            -O2 \
+            -I"$PYTHON_INCLUDE" \
+            -I"$PYTHON_CONFIG_INCLUDE" \
+            -I"$PYBIND11_INCLUDE" \
+            vischeck_module.cpp \
+            VisCheck.cpp \
+            OptimizedGeometry.cpp \
+            Parser.cpp \
+            -L"$PYTHON_LIB" \
+            -lpython$PYTHON_VERSION \
+            -o vischeck$(python-config --extension-suffix)
+          
+          if [ $? -ne 0 ]; then
+            echo "ERROR: Failed to compile vischeck.so"
+            exit 1
+          fi
+          
+          # Verify the .so was created
+          EXTENSION_SUFFIX=$(python-config --extension-suffix)
+          if [ ! -f "vischeck$EXTENSION_SUFFIX" ]; then
+            echo "ERROR: vischeck$EXTENSION_SUFFIX was not created"
+            ls -la
+            exit 1
+          fi
+          
+          echo "Successfully built vischeck$EXTENSION_SUFFIX"
+          ls -la vischeck$EXTENSION_SUFFIX
+          
+          cd ..
       
-      - name: verify build outputs
+      - name: verify build outputs (Windows)
+        if: matrix.os == 'windows-latest'
         shell: cmd
         run: |
           echo Checking build outputs...
@@ -127,11 +214,44 @@ jobs:
             echo Contents of VisCheckCS2 directory:
             dir VisCheckCS2
           )
+
+      - name: verify build outputs (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          echo "Checking build outputs..."
+          if [ -f "VPhysToOpt" ]; then
+            echo "✓ VPhysToOpt found"
+            ls -la VPhysToOpt
+          else
+            echo "✗ VPhysToOpt not found"
+          fi
+          
+          cd VisCheckCS2
+          EXTENSION_SUFFIX=$(python-config --extension-suffix)
+          if [ -f "vischeck$EXTENSION_SUFFIX" ]; then
+            echo "✓ vischeck$EXTENSION_SUFFIX found"
+            ls -la "vischeck$EXTENSION_SUFFIX"
+          else
+            echo "✗ vischeck$EXTENSION_SUFFIX not found"
+            echo "Contents of VisCheckCS2 directory:"
+            ls -la
+          fi
+          cd ..
       
-      - name: upload built binaries
+      - name: upload built binaries (Windows)
+        if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
           name: vischeck-win64
           path: |
             x64/Release/VPhysToOpt.exe
             VisCheckCS2/vischeck.pyd
+
+      - name: upload built binaries (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vischeck-linux64
+          path: |
+            VPhysToOpt
+            VisCheckCS2/vischeck*.so
