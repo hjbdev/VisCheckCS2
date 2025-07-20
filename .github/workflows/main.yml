@@ -38,7 +38,9 @@ jobs:
           msbuild VPhysToOpt.sln /p:Configuration=Release /p:Platform=x64
 
           :: build vischeck.pyd manually
+          cd VisCheckCS2
           cl /LD /std:c++20 /I "%PYTHON_INCLUDE%" /I "%USERPROFILE%\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\\LocalCache\\local-packages\\Python310\\site-packages\\pybind11\\include" vischeck_module.cpp /link /LIBPATH:"%PYTHON_LIB%" /OUT:vischeck.pyd
+          cd ..
 
       - name: upload built binaries
         uses: actions/upload-artifact@v4
@@ -46,4 +48,4 @@ jobs:
           name: vischeck-win64
           path: |
             x64/Release/VPhysToOpt.exe
-            vischeck.pyd
+            VisCheckCS2\vischeck.pyd
