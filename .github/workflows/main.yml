@@ -1,0 +1,41 @@
+name: build vischeck binaries
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+
+      - name: setup python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.10
+
+      - name: build VPhysToOpt
+        run: |
+          mkdir build
+          cd build
+          cmake ../VPhysToOpt
+          cmake --build . --config Release
+        shell: cmd
+
+      - name: build vischeck module
+        run: |
+          pip install wheel setuptools
+          cd vischeck
+          python setup.py bdist_wheel
+        shell: cmd
+
+      - name: upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: vischeck-windows-binaries
+          path: |
+            build/Release/VPhysToOpt.exe
+            vischeck/dist/*.whl
