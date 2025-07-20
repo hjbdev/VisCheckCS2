@@ -21,26 +21,33 @@ jobs:
       - name: install pybind11
         run: pip install pybind11
 
-      - name: locate vsdevcmd and build everything
+      - name: build vischeck.pyd
         shell: cmd
         run: |
-          :: locate visual studio
           for /f "usebackq tokens=*" %%i in (`"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -property installationPath`) do (
             call "%%i\Common7\Tools\VsDevCmd.bat"
           )
 
-          :: set python include/lib paths explicitly
           set PYTHON_ROOT=%APPDATA%\Local\Programs\Python\Python310
           set PYTHON_INCLUDE=%PYTHON_ROOT%\include
           set PYTHON_LIB=%PYTHON_ROOT%\libs
 
-          :: build VPhysToOpt.exe
           msbuild VPhysToOpt.sln /p:Configuration=Release /p:Platform=x64
 
-          :: build vischeck.pyd manually
-          cd VisCheckCS2
-          cl /LD /std:c++20 /I "%PYTHON_INCLUDE%" /I "%USERPROFILE%\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\\LocalCache\\local-packages\\Python310\\site-packages\\pybind11\\include" vischeck_module.cpp /link /LIBPATH:"%PYTHON_LIB%" /OUT:vischeck.pyd
-          cd ..
+          :: find pybind11 include path via python -m pybind11 --includes
+          for /f "tokens=*" %%p in ('python -m pybind11 --includes') do set PYBIND11_INCLUDES=%%p
+
+          :: PYBIND11_INCLUDES has something like: -I"path" -I"other_path"
+          :: strip leading -I and quotes for first include path (lazy, but should work)
+          for /f "tokens=1 delims=-I " %%a in ("%PYBIND11_INCLUDES%") do set PYBIND11_PATH=%%a
+          set PYBIND11_PATH=%PYBIND11_PATH:"=%
+
+          echo pybind11 path resolved: %PYBIND11_PATH%
+
+          cl /LD /std:c++20 /I "%PYTHON_INCLUDE%" /I "%PYBIND11_PATH%" vischeck_module.cpp /link /LIBPATH:"%PYTHON_LIB%" /Fe:vischeck.pyd
+
+          dir
+
 
       - name: upload built binaries
         uses: actions/upload-artifact@v4
