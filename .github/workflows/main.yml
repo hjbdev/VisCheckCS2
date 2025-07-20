@@ -31,11 +31,12 @@ jobs:
           cd vischeck
           python setup.py bdist_wheel
         shell: cmd
-
+        
       - name: upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: vischeck-windows-binaries
           path: |
             build/Release/VPhysToOpt.exe
             vischeck/dist/*.whl
+
