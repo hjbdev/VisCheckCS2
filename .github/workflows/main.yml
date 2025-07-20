@@ -29,6 +29,11 @@ jobs:
             call "%%i\Common7\Tools\VsDevCmd.bat"
           )
 
+          :: set python include/lib paths explicitly
+          set PYTHON_ROOT=%APPDATA%\Local\Programs\Python\Python310
+          set PYTHON_INCLUDE=%PYTHON_ROOT%\include
+          set PYTHON_LIB=%PYTHON_ROOT%\libs
+
           :: build VPhysToOpt.exe
           msbuild VPhysToOpt.sln /p:Configuration=Release /p:Platform=x64
 
